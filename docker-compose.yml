@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: numiran-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-numiran}
+      POSTGRES_USER: ${POSTGRES_USER:-numiran}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-numiran}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    networks:
+      - numiran-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: numiran-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+    networks:
+      - numiran-net
+
+  bot:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    container_name: numiran-bot
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./src:/app/src
+      - ./api.md:/app/api.md:ro
+    command: ["python", "-m", "src.app.main"]
+    restart: unless-stopped
+    networks:
+      - numiran-net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  numiran-net:
+    driver: bridge
