@@ -4,7 +4,7 @@ from typing import Dict
 
 _STRINGS: Dict[str, Dict[str, str]] = {
     "fa": {
-        "greet": "به ربات نامیران خوش آمدید. از منوی زیر انتخاب کنید:",
+        "greet": "به ربات ویرانام خوش آمدید. از منوی زیر انتخاب کنید:",
         "choose_language": "زبان را انتخاب کنید:",
         "language_set": "زبان تنظیم شد.",
         "wallet.info": "کیف پول: به زودی امکانات شارژ و تاریخچه اضافه می‌شود.",
@@ -16,6 +16,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.wallet": "کیف پول",
         "menu.support": "راهنما و پشتیبانی",
         "menu.language": "تنظیمات زبان",
+        "menu.orders": "سفارش‌های من",
     },
     "en": {
         "greet": "Welcome to Viranum bot. Choose an option:",
@@ -30,6 +31,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.wallet": "Wallet",
         "menu.support": "Support",
         "menu.language": "Language Settings",
+        "menu.orders": "My purchases",
     },
     "ru": {
         "greet": "Добро пожаловать в бота Viranum. Выберите действие:",
@@ -44,6 +46,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.wallet": "Кошелёк",
         "menu.support": "Поддержка",
         "menu.language": "Язык",
+        "menu.orders": "Мои покупки",
     },
 }
 

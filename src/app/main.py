@@ -64,9 +64,10 @@ def main_kb(lang: str):
     b.button(text=tr("menu.buy_temp", lang), callback_data="buy_temp")
     b.button(text=tr("menu.buy_perm", lang), callback_data="buy_perm")
     b.button(text=tr("menu.wallet", lang), callback_data="wallet")
+    b.button(text=tr("menu.orders", lang), callback_data="orders")
     b.button(text=tr("menu.support", lang), callback_data="support")
     b.button(text=tr("menu.language", lang), callback_data="language")
-    b.adjust(2, 2, 1)
+    b.adjust(2, 2, 2)
     return b.as_markup()
 
 
@@ -634,7 +635,7 @@ async def operator_select_handler(call: CallbackQuery, state: FSMContext):
 async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     await call.answer()
     data = await state.get_data()
-    lang = data.get("lang", settings.LOCALE_DEFAULT)
+    lang = await get_lang(call)
     sid = data.get("service_id")
     cid = data.get("country_id")
     op = data.get("operator")
@@ -683,6 +684,21 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
 
     await state.update_data(order_id=rid)
     await state.set_state(BuyTemp.active_order)
+
+    # persist order to Redis history
+    uid = call.from_user.id
+    r = await get_redis()
+    if r:
+        entry = {
+            "id": rid,
+            "number": full_number,
+            "amount": amt,
+            "time": time_str,
+            "repeat": repeat,
+            "ts": int(time.time()),
+        }
+        await r.lpush(f"orders:{uid}", json.dumps(entry, ensure_ascii=False))
+        await r.ltrim(f"orders:{uid}", 0, 49)
 
     await call.message.edit_text(order_msg, reply_markup=status_kb(lang, rid))
 
@@ -744,7 +760,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
 async def status_action_handler(call: CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
-    lang = data.get("lang", settings.LOCALE_DEFAULT)
+    lang = await get_lang(call)
 
     _, action, rid = call.data.split(":", 2)
 
@@ -768,11 +784,57 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
     code = res.get("CODE", "") or ""
     desc = res.get("DESCRIPTION", "") or ""
 
+    # Localize common descriptions
+    desc_map = {
+        "wait code": t(lang, "در انتظار دری��فت کد", "wait code", "ожидайте код"),
+        "number canceled": t(lang, "شماره کنسل شده", "number canceled", "номер отменён"),
+        "number banned": t(lang, "شماره مسدود شده", "number banned", "номер заблокирован"),
+        "wait code again": t(lang, "در انتظار دریافت کد مجدد", "wait code again", "ожидание повторного кода"),
+        "completed": t(lang, "تکمیل درخواست", "completed", "завершено"),
+        "code received": t(lang, "کد دریافت شد", "code received", "код получен"),
+    }
+    desc_lower = desc.lower()
+    localized_desc = desc_map.get(desc_lower, desc)
+
     if result == NumberStatus.CODE_RECEIVED:
         txt = t(lang, "کد دریافت شد:", "Code received:", "Код получен:") + f"\n\n<code>{code}</code>"
         await call.message.answer(txt, parse_mode=ParseMode.HTML)
+    elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
+        await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
     else:
-        await call.message.answer(t(lang, "وضعیت: ", "Status: ", "Статус: ") + str(desc))
+        await call.message.answer(t(lang, "وضعیت: ", "Status: ", "Статус: ") + localized_desc)
+
+
+# --------- My Orders ---------
+
+async def my_orders_handler(call: CallbackQuery):
+    lang = await get_lang(call)
+    await call.answer()
+    uid = call.from_user.id
+    r = await get_redis()
+    items: List[Dict[str, Any]] = []
+    if r:
+        raw = await r.lrange(f"orders:{uid}", 0, 9)
+        for it in raw or []:
+            try:
+                items.append(json.loads(it))
+            except Exception:
+                continue
+
+    if not items:
+        await call.message.edit_text(t(lang, "سفارشی یافت نشد.", "No purchases yet.", "Покупки отсутствуют."), reply_markup=main_kb(lang))
+        return
+
+    lines = []
+    for e in items:
+        line = (
+            t(lang, "آیدی:", "ID:", "ID:") + f" {e.get('id')} | "
+            + t(lang, "شماره:", "Number:", "Номер:") + f" {e.get('number')} | "
+            + t(lang, "قیمت:", "Price:", "Цена:") + f" {e.get('amount')}"
+        )
+        lines.append(line)
+    msg = "\n".join(lines)
+    await call.message.edit_text(msg, reply_markup=main_kb(lang))
 
 
 # --------- Permanent numbers (stub) ---------
@@ -822,6 +884,7 @@ async def app():
     dp.callback_query.register(wallet_topup_reject_handler, F.data.startswith("w:reject:"))
 
     dp.callback_query.register(support_handler, F.data == "support")
+    dp.callback_query.register(my_orders_handler, F.data == "orders")
 
     # Temp number flow
     dp.callback_query.register(buy_temp_handler, F.data == "buy_temp")
