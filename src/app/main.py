@@ -11,6 +11,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties
+from aiogram.exceptions import TelegramBadRequest
 
 from .config import settings
 from .i18n import tr, set_locale_middleware
@@ -58,6 +60,14 @@ def localize_api_error(lang: str, code: Optional[int], description: str) -> str:
 
 
 # ---------------------- Keyboards ----------------------
+
+async def safe_edit_text(message: Message, text: str, reply_markup=None):
+    try:
+        await message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            return
+        raise
 
 def main_kb(lang: str):
     b = InlineKeyboardBuilder()
@@ -812,7 +822,7 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
 
     # Localize common descriptions
     desc_map = {
-        "wait code": t(lang, "در انتظار دری��فت کد", "wait code", "ожидайте код"),
+        "wait code": t(lang, "در انتظار دریافت کد", "wait code", "ожидайте код"),
         "number canceled": t(lang, "شماره کنسل شده", "number canceled", "номер отменён"),
         "number banned": t(lang, "شماره مسدود شده", "number banned", "номер заблокирован"),
         "wait code again": t(lang, "در انتظار دریافت کد مجدد", "wait code again", "ожидание повторного кода"),
@@ -866,7 +876,7 @@ async def my_orders_handler(call: CallbackQuery):
         )
         lines.append(line)
     msg = "\n".join(lines)
-    await call.message.edit_text(msg, reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, msg, reply_markup=main_kb(lang))
 
 
 async def active_orders_handler(call: CallbackQuery):
@@ -902,7 +912,7 @@ async def active_orders_handler(call: CallbackQuery):
             line += t(lang, " | کد:", " | Code:", " | Код:") + f" {obj.get('code')}"
         lines.append(line)
     msg = "\n".join(lines)
-    await call.message.edit_text(msg, reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, msg, reply_markup=main_kb(lang))
 
 
 # --------- Permanent numbers (stub) ---------
@@ -918,7 +928,7 @@ async def buy_perm_handler(call: CallbackQuery):
 async def app():
     setup_logging()
 
-    bot = Bot(token=settings.BOT_TOKEN, parse_mode=ParseMode.HTML)
+    bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
     storage = None
     try:
