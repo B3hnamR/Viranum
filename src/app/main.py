@@ -192,6 +192,32 @@ async def get_redis():
         return None
 
 
+async def set_user_lang(user_id: int, lang: str) -> None:
+    r = await get_redis()
+    if not r:
+        return
+    if lang not in {"fa", "en", "ru"}:
+        lang = settings.LOCALE_DEFAULT
+    await r.set(f"user:lang:{user_id}", lang)
+
+
+async def get_lang(obj) -> str:
+    r = await get_redis()
+    uid = getattr(getattr(obj, "from_user", None), "id", None)
+    tg_lang = getattr(getattr(obj, "from_user", None), "language_code", None)
+    if r and uid:
+        try:
+            v = await r.get(f"user:lang:{uid}")
+            if v:
+                val = v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
+                if val in {"fa", "en", "ru"}:
+                    return val
+        except Exception:
+            pass
+    base = tg_lang or settings.LOCALE_DEFAULT
+    return base if base in {"fa", "en", "ru"} else settings.LOCALE_DEFAULT
+
+
 async def wallet_get_balance(user_id: int) -> int:
     r = await get_redis()
     if not r:
@@ -256,23 +282,25 @@ async def on_startup(bot: Bot):
 
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
-    lang = get_lang_from_user(message)
+    lang = await get_lang(message)
     await message.answer(tr("greet", lang), reply_markup=main_kb(lang))
 
 
 async def home_handler(call: CallbackQuery, state: FSMContext):
     await state.clear()
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang))
 
 
 async def language_handler(call: CallbackQuery):
-    await call.message.edit_text(tr("choose_language", settings.LOCALE_DEFAULT), reply_markup=language_kb())
+    lang = await get_lang(call)
+    await call.message.edit_text(tr("choose_language", lang), reply_markup=language_kb())
 
 
 async def set_language_handler(call: CallbackQuery):
     _, lang = call.data.split(":", 1)
+    await set_user_lang(call.from_user.id, lang)
     await call.message.edit_text(tr("language_set", lang), reply_markup=main_kb(lang))
 
 
@@ -286,7 +314,7 @@ async def wallet_kb(lang: str):
 
 
 async def wallet_handler(call: CallbackQuery, state: FSMContext):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     uid = call.from_user.id
     bal = await wallet_get_balance(uid)
@@ -295,7 +323,7 @@ async def wallet_handler(call: CallbackQuery, state: FSMContext):
 
 
 async def balance_cmd(message: Message):
-    lang = get_lang_from_user(message)
+    lang = await get_lang(message)
     try:
         async with NumberlandClient() as cl:
             bal = await cl.balance()
@@ -307,7 +335,7 @@ async def balance_cmd(message: Message):
 
 
 async def support_handler(call: CallbackQuery):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     await call.message.edit_text(tr("support.info", lang), reply_markup=main_kb(lang))
 
@@ -457,7 +485,7 @@ async def wallet_topup_reject_handler(call: CallbackQuery, bot: Bot):
 # --------- Temporary Number Flow ---------
 
 async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     # Fetch services
     async with NumberlandClient() as cl:
@@ -727,7 +755,7 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
 # --------- Permanent numbers (stub) ---------
 
 async def buy_perm_handler(call: CallbackQuery):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     await call.message.edit_text(tr("buy_perm.stub", lang), reply_markup=main_kb(lang))
 

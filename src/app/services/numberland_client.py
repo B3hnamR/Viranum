@@ -59,7 +59,7 @@ class NumberlandClient:
         timeout: float = 15.0,
         max_retries: int = 2,
         backoff_factor: float = 0.6,
-        http2: bool = True,
+        http2: bool = False,
     ) -> None:
         self.api_key = api_key or settings.NUMBERLAND_API_KEY
         self.base_url = base_url
