@@ -17,6 +17,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.support": "راهنما و پشتیبانی",
         "menu.language": "تنظیمات زبان",
         "menu.orders": "سفارش‌های من",
+        "menu.active": "سفارش‌های فعال",
     },
     "en": {
         "greet": "Welcome to Viranum bot. Choose an option:",
@@ -32,6 +33,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.support": "Support",
         "menu.language": "Language Settings",
         "menu.orders": "My purchases",
+        "menu.active": "Active orders",
     },
     "ru": {
         "greet": "Добро пожаловать в бота Viranum. Выберите действие:",
@@ -47,6 +49,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.support": "Поддержка",
         "menu.language": "Язык",
         "menu.orders": "Мои покупки",
+        "menu.active": "Активные покупки",
     },
 }
 

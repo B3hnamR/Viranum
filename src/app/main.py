@@ -64,10 +64,11 @@ def main_kb(lang: str):
     b.button(text=tr("menu.buy_temp", lang), callback_data="buy_temp")
     b.button(text=tr("menu.buy_perm", lang), callback_data="buy_perm")
     b.button(text=tr("menu.wallet", lang), callback_data="wallet")
+    b.button(text=tr("menu.active", lang), callback_data="active_orders")
     b.button(text=tr("menu.orders", lang), callback_data="orders")
     b.button(text=tr("menu.support", lang), callback_data="support")
     b.button(text=tr("menu.language", lang), callback_data="language")
-    b.adjust(2, 2, 2)
+    b.adjust(2, 2, 3)
     return b.as_markup()
 
 
@@ -685,8 +686,11 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     await state.update_data(order_id=rid)
     await state.set_state(BuyTemp.active_order)
 
-    # persist order to Redis history
+    # persist order to Redis history and active set
     uid = call.from_user.id
+    now_ts = int(time.time())
+    ttl_sec = parse_time_to_seconds(time_str)
+    expire_ts = now_ts + ttl_sec
     r = await get_redis()
     if r:
         entry = {
@@ -695,10 +699,14 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
             "amount": amt,
             "time": time_str,
             "repeat": repeat,
-            "ts": int(time.time()),
+            "ts": now_ts,
+            "expire_ts": expire_ts,
+            "status": "active",
         }
         await r.lpush(f"orders:{uid}", json.dumps(entry, ensure_ascii=False))
         await r.ltrim(f"orders:{uid}", 0, 49)
+        await r.hset(f"active:{uid}", mapping={rid: json.dumps(entry, ensure_ascii=False)})
+        await r.expire(f"active:{uid}", ttl_sec + 3600)
 
     await call.message.edit_text(order_msg, reply_markup=status_kb(lang, rid))
 
@@ -757,6 +765,24 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
 
 # --------- Status control ---------
 
+async def _update_active_order(uid: int, order_id: str, status: str, extra: Optional[Dict[str, Any]] = None):
+    r = await get_redis()
+    if not r:
+        return
+    raw = await r.hget(f"active:{uid}", order_id)
+    if not raw:
+        return
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        obj = {}
+    obj["status"] = status
+    if extra:
+        obj.update(extra)
+    await r.hset(f"active:{uid}", order_id, json.dumps(obj, ensure_ascii=False))
+    # keep existing TTL
+
+
 async def status_action_handler(call: CallbackQuery, state: FSMContext):
     await call.answer()
     data = await state.get_data()
@@ -796,10 +822,16 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
     desc_lower = desc.lower()
     localized_desc = desc_map.get(desc_lower, desc)
 
+    uid = call.from_user.id
     if result == NumberStatus.CODE_RECEIVED:
+        await _update_active_order(uid, rid, "code", {"code": code})
         txt = t(lang, "کد دریافت شد:", "Code received:", "Код получен:") + f"\n\n<code>{code}</code>"
         await call.message.answer(txt, parse_mode=ParseMode.HTML)
-    elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
+    elif result in (NumberStatus.CANCELED, NumberStatus.BANNED):
+        await _update_active_order(uid, rid, "canceled")
+        await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
+    elif result == NumberStatus.COMPLETED:
+        await _update_active_order(uid, rid, "completed")
         await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
     else:
         await call.message.answer(t(lang, "وضعیت: ", "Status: ", "Статус: ") + localized_desc)
@@ -832,6 +864,42 @@ async def my_orders_handler(call: CallbackQuery):
             + t(lang, "شماره:", "Number:", "Номер:") + f" {e.get('number')} | "
             + t(lang, "قیمت:", "Price:", "Цена:") + f" {e.get('amount')}"
         )
+        lines.append(line)
+    msg = "\n".join(lines)
+    await call.message.edit_text(msg, reply_markup=main_kb(lang))
+
+
+async def active_orders_handler(call: CallbackQuery):
+    lang = await get_lang(call)
+    await call.answer()
+    uid = call.from_user.id
+    r = await get_redis()
+    if not r:
+        await call.message.edit_text(t(lang, "خطا در خواندن داده‌ها.", "Data read error.", "Ошиб��а чтения данных."), reply_markup=main_kb(lang))
+        return
+    data = await r.hgetall(f"active:{uid}")
+    if not data:
+        await call.message.edit_text(t(lang, "سفارش فعالی یافت نشد.", "No active orders.", "Активных покупок нет."), reply_markup=main_kb(lang))
+        return
+    lines = []
+    now_ts = int(time.time())
+    for key, val in data.items():
+        try:
+            obj = json.loads(val)
+        except Exception:
+            continue
+        remain = max(0, obj.get("expire_ts", now_ts) - now_ts)
+        mins = remain // 60
+        secs = remain % 60
+        status = obj.get("status", "active")
+        line = (
+            t(lang, "آیدی:", "ID:", "ID:") + f" {obj.get('id')} | "
+            + t(lang, "شماره:", "Number:", "Номер:") + f" {obj.get('number')} | "
+            + t(lang, "وضعیت:", "Status:", "Статус:") + f" {status} | "
+            + t(lang, "مانده:", "Remaining:", "Осталось:") + f" {mins:02d}:{secs:02d}"
+        )
+        if status == "code" and obj.get("code"):
+            line += t(lang, " | کد:", " | Code:", " | Код:") + f" {obj.get('code')}"
         lines.append(line)
     msg = "\n".join(lines)
     await call.message.edit_text(msg, reply_markup=main_kb(lang))
@@ -885,6 +953,7 @@ async def app():
 
     dp.callback_query.register(support_handler, F.data == "support")
     dp.callback_query.register(my_orders_handler, F.data == "orders")
+    dp.callback_query.register(active_orders_handler, F.data == "active_orders")
 
     # Temp number flow
     dp.callback_query.register(buy_temp_handler, F.data == "buy_temp")
