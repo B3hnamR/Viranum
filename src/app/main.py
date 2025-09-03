@@ -363,7 +363,7 @@ async def wallet_topup_start_handler(call: CallbackQuery, state: FSMContext):
     lang = await get_lang(call)
     await call.answer()
     await state.set_state(WalletTopUp.waiting_amount)
-    await call.message.edit_text(t(lang, "مبلغ شارژ را به تومان ارسال کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (тугрики):"))
+    await call.message.edit_text(t(lang, "مبلغ شارژ را به تومان ارسال کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (Томан):"))
 
 
 async def topup_amount_input_handler(message: Message, state: FSMContext, bot: Bot):
@@ -642,7 +642,12 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     # For MVP we skip wallet check; directly attempt purchase
     async with NumberlandClient() as cl:
         try:
-            res = await cl.get_num(service=sid, country=cid, operator=op)
+            quote = data.get("quote", {})
+            base_amount = int(quote.get("amount", 0)) if quote else 0
+            params = {"service": str(sid), "country": str(cid), "operator": str(op)}
+            if base_amount > 0:
+                params["price"] = str(base_amount)
+            res = await cl._get("getnum", params)
         except NumberlandAPIError as e:
             localized = localize_api_error(lang, getattr(e, "code", None), getattr(e, "description", ""))
             await call.message.edit_text(
