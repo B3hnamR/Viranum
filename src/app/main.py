@@ -724,7 +724,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     chat_id = call.message.chat.id
     message_id = call.message.message_id
 
-    async def poll_status(order_id: str, lang: str):
+    async def poll_status(order_id: str, lang: str, uid: int):
         async with NumberlandClient() as pcl:
             max_seconds = parse_time_to_seconds(time_str)
             elapsed = 0
@@ -742,6 +742,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
                 desc = st.get("DESCRIPTION", "") or ""
 
                 if result == NumberStatus.CODE_RECEIVED:
+                    await _update_active_order(uid, order_id, "code", {"code": code})
                     txt = (
                         t(lang, "کد دریافت شد:", "Code received:", "Код получен:")
                         + f"\n\n<code>{code}</code>\n\n"
@@ -753,6 +754,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
                         pass
                     return
                 elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
+                    await _remove_active_order(uid, order_id)
                     txt = (
                         t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ")
                         + f"{desc}"
@@ -770,7 +772,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     prev = POLL_TASKS.get(rid)
     if prev and not prev.done():
         prev.cancel()
-    POLL_TASKS[rid] = asyncio.create_task(poll_status(rid, lang))
+    POLL_TASKS[rid] = asyncio.create_task(poll_status(rid, lang, uid))
 
 
 # --------- Status control ---------
@@ -791,6 +793,13 @@ async def _update_active_order(uid: int, order_id: str, status: str, extra: Opti
         obj.update(extra)
     await r.hset(f"active:{uid}", order_id, json.dumps(obj, ensure_ascii=False))
     # keep existing TTL
+
+
+async def _remove_active_order(uid: int, order_id: str):
+    r = await get_redis()
+    if not r:
+        return
+    await r.hdel(f"active:{uid}", order_id)
 
 
 async def status_action_handler(call: CallbackQuery, state: FSMContext):
@@ -835,13 +844,10 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
     uid = call.from_user.id
     if result == NumberStatus.CODE_RECEIVED:
         await _update_active_order(uid, rid, "code", {"code": code})
-        txt = t(lang, "کد دریافت شد:", "Code received:", "Код получен:") + f"\n\n<code>{code}</code>"
+        txt = t(lang, "کد دریاف�� شد:", "Code received:", "Код получен:") + f"\n\n<code>{code}</code>"
         await call.message.answer(txt, parse_mode=ParseMode.HTML)
-    elif result in (NumberStatus.CANCELED, NumberStatus.BANNED):
-        await _update_active_order(uid, rid, "canceled")
-        await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
-    elif result == NumberStatus.COMPLETED:
-        await _update_active_order(uid, rid, "completed")
+    elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
+        await _remove_active_order(uid, rid)
         await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
     else:
         await call.message.answer(t(lang, "وضعیت: ", "Status: ", "Статус: ") + localized_desc)
