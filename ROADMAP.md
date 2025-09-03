@@ -1,4 +1,4 @@
-# Numiran Telegram Bot – Roadmap و طرح فنی
+# Viranum Telegram Bot – Roadmap و طرح فنی
 
 نسخه: 0.1 (Phase Planning)
 
@@ -25,7 +25,7 @@ Deployment اولیه: Long polling. فاز بعد: Webhook پشت Reverse Proxy
 پس از تایید این Roadmap، اسکلت پروژه به این ساختار ساخته خواهد شد:
 
 ```
-Numiran/
+Viranum/
 ├─ api.md                        # خلاصه API Numberland (موجود)
 ├─ ROADMAP.md                    # این فایل
 ├─ docker-compose.yml            # Orchestration (bot, db, redis)
@@ -82,7 +82,7 @@ Numiran/
 - BOT_TOKEN=
 - ADMIN_IDS= "12345,67890"
 - NUMBERLAND_API_KEY=
-- DB_DSN= "postgresql+psycopg://user:pass@db:5432/numiran"
+- DB_DSN= "postgresql+psycopg://user:pass@db:5432/viranum"
 - REDIS_DSN= "redis://redis:6379/0"
 - BOT_MODE= "polling" | "webhook"
 - BASE_MARKUP_PERCENT= e.g. 20

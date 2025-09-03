@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Numiran updater: pull latest from GitHub, rebuild/restart Docker, follow logs
+# Viranum updater: pull latest from GitHub, rebuild/restart Docker, follow logs
 # Usage:
 #   bash u.sh [branch] [service]
 #   - branch: git branch to pull (default: current branch)
@@ -50,6 +50,9 @@ log "Docker: (re)starting services..."
 
 log "Docker: services status:"
  docker compose ps
+
+# If network or containers were previously named under the old project, ensure compose picks new names
+# (Optional clean-up can be added here if needed)
 
 log "Following logs for service: ${SERVICE_TO_TAIL} (Ctrl+C to stop)"
  docker compose logs -f "${SERVICE_TO_TAIL}"

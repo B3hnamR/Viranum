@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Numiran bootstrapper: Provision a fresh Linux server and run the bot
+# Viranum bootstrapper: Provision a fresh Linux server and run the bot
 # - Installs Git, Docker (with Compose v2), and prerequisites
-# - Clones/updates the repository into /opt/numiran (or uses current repo)
+# - Clones/updates the repository into /opt/viranum (or uses current repo)
 # - Configures .env (interactive prompt) if missing
 # - Builds and starts Docker services
 # - Follows bot logs
 #
 # Usage examples:
-#   sudo bash setup.sh "https://github.com/USERNAME/Numiran.git" main
+#   sudo bash setup.sh "https://github.com/USERNAME/Viranum.git" main
 #   sudo bash setup.sh                              # if already inside repo, will use it
 #
 # ENV overrides:
@@ -18,7 +18,7 @@ set -Eeuo pipefail
 # ----------------------------- Config -----------------------------
 REPO_URL=${REPO_URL:-${1:-}}
 BRANCH=${BRANCH:-${2:-main}}
-APP_DIR=${APP_DIR:-/opt/numiran}
+APP_DIR=${APP_DIR:-/opt/viranum}
 SERVICE_TAIL=${SERVICE_TAIL:-bot}
 NON_INTERACTIVE=${NON_INTERACTIVE:-0}
 
