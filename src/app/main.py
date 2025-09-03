@@ -40,6 +40,23 @@ def parse_time_to_seconds(time_str: str) -> int:
         return 1200  # default 20 minutes
 
 
+def localize_api_error(lang: str, code: Optional[int], description: str) -> str:
+    # Map well-known codes/descriptions to localized messages
+    code = int(code) if code is not None else None
+    desc_key = description.strip().lower() if description else ""
+
+    # Known mappings
+    if code == -206 or desc_key == "price not set":
+        return t(lang, "قیمت برای خرید تنظیم نشده است.", "Price is not set for purchase.", "Цена для покупки не установлена.")
+    if code == -205 or desc_key == "no balance":
+        return t(lang, "موجودی پنل کافی نیست.", "Insufficient panel balance.", "Недостаточно средств на панели.")
+    if code == -202 or desc_key == "parameters not found":
+        return t(lang, "پارامترها نامعتبر هستند.", "Invalid parameters.", "Неверные параметры.")
+
+    # Fallback
+    return description or t(lang, "خطای نامشخص.", "Unknown error.", "Неизвестная ошибка.")
+
+
 # ---------------------- Keyboards ----------------------
 
 def main_kb(lang: str):
@@ -343,14 +360,14 @@ async def support_handler(call: CallbackQuery):
 # --------- Wallet Top-up (manual with admin approval) ---------
 
 async def wallet_topup_start_handler(call: CallbackQuery, state: FSMContext):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     await state.set_state(WalletTopUp.waiting_amount)
-    await call.message.edit_text(t(lang, "مبلغ شارژ را به تومان ارس��ل کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (Туман):"))
+    await call.message.edit_text(t(lang, "مبلغ شارژ را به تومان ارسال کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (тугрики):"))
 
 
 async def topup_amount_input_handler(message: Message, state: FSMContext, bot: Bot):
-    lang = get_lang_from_user(message)
+    lang = await get_lang(message)
     text = (message.text or "").strip()
     try:
         amount = int(text)
@@ -393,7 +410,7 @@ async def topup_amount_input_handler(message: Message, state: FSMContext, bot: B
 
 
 async def wallet_history_handler(call: CallbackQuery):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     uid = call.from_user.id
     items = await wallet_history(uid, 10)
@@ -406,7 +423,7 @@ async def wallet_history_handler(call: CallbackQuery):
         typ = it.get("type")
         amount = it.get("amount")
         if typ == "credit":
-            lines.append(t(lang, "+ ش��رژ ", "+ Credit ", "+ Пополнение ") + f"{amount}")
+            lines.append(t(lang, "+ شارژ ", "+ Credit ", "+ Пополнение ") + f"{amount}")
         elif typ == "debit":
             lines.append(t(lang, "- برداشت ", "- Debit ", "- Списание ") + f"{amount}")
         else:
@@ -416,7 +433,7 @@ async def wallet_history_handler(call: CallbackQuery):
 
 
 async def wallet_topup_approve_handler(call: CallbackQuery, bot: Bot):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     if call.from_user.id not in admin_ids():
         await call.message.answer(t(lang, "دسترسی ندارید.", "No permission.", "Нет доступа."))
@@ -451,7 +468,7 @@ async def wallet_topup_approve_handler(call: CallbackQuery, bot: Bot):
 
 
 async def wallet_topup_reject_handler(call: CallbackQuery, bot: Bot):
-    lang = get_lang_from_user(call)
+    lang = await get_lang(call)
     await call.answer()
     if call.from_user.id not in admin_ids():
         await call.message.answer(t(lang, "دسترسی ندارید.", "No permission.", "Нет доступа."))
@@ -627,8 +644,9 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
         try:
             res = await cl.get_num(service=sid, country=cid, operator=op)
         except NumberlandAPIError as e:
+            localized = localize_api_error(lang, getattr(e, "code", None), getattr(e, "description", ""))
             await call.message.edit_text(
-                t(lang, "خطا در خرید: ", "Purchase error: ", "Ошибка покупки: ") + str(e),
+                t(lang, "خطا در خرید: ", "Purchase error: ", "Ошибка покупки: ") + localized,
                 reply_markup=main_kb(lang),
             )
             await state.clear()
