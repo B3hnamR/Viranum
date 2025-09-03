@@ -3,11 +3,11 @@ version: "3.9"
 services:
   db:
     image: postgres:15-alpine
-    container_name: numiran-db
+    container_name: viranum-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-numiran}
-      POSTGRES_USER: ${POSTGRES_USER:-numiran}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-numiran}
+      POSTGRES_DB: ${POSTGRES_DB:-viranum}
+      POSTGRES_USER: ${POSTGRES_USER:-viranum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-viranum}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,11 +18,11 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - numiran-net
+      - viranum-net
 
   redis:
     image: redis:7-alpine
-    container_name: numiran-redis
+    container_name: viranum-redis
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
@@ -34,13 +34,13 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - numiran-net
+      - viranum-net
 
   bot:
     build:
       context: .
       dockerfile: infra/Dockerfile
-    container_name: numiran-bot
+    container_name: viranum-bot
     depends_on:
       db:
         condition: service_healthy
@@ -56,12 +56,12 @@ services:
     command: ["python", "-m", "src.app.main"]
     restart: unless-stopped
     networks:
-      - numiran-net
+      - viranum-net
 
 volumes:
   pgdata:
   redisdata:
 
 networks:
-  numiran-net:
+  viranum-net:
     driver: bridge

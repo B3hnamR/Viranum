@@ -81,7 +81,7 @@ class NumberlandClient:
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 http2=self.http2,
-                headers={"User-Agent": "NumiranBot/1.0"},
+                headers={"User-Agent": "ViranumBot/1.0"},
             )
 
     async def aclose(self) -> None:

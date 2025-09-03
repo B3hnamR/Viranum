@@ -1,4 +1,4 @@
-# Numiran – Telegram Bot (Numberland API)
+# Viranum – Telegram Bot (Numberland API)
 
 ربات تلگرامی چندزبانه، داکرایز و API-Based برای دریافت و مدیریت شماره‌های مجازی از Numberland.
 
@@ -29,7 +29,7 @@
 
 ## معماری و ساختار پوشه‌ها (خلاصه)
 ```
-Numiran/
+Viranum/
 ├─ docker-compose.yml
 ├─ infra/
 │  ├─ Dockerfile
@@ -67,20 +67,20 @@ Numiran/
 ## راه‌اندازی سریع (Fresh Server)
 به‌صورت خودکار با setup.sh:
 ```
-sudo bash setup.sh "https://github.com/USERNAME/Numiran.git" main
+sudo bash setup.sh "https://github.com/USERNAME/Viranum.git" main
 # سپس طبق پرامپت‌ها BOT_TOKEN ،NUMBERLAND_API_KEY و ADMIN_IDS را وارد کنید
 ```
 این اسکریپت:
 - Git، Docker و Compose را نصب می‌کند
-- ریپو را در /opt/numiran کلون/آپدیت می‌کند
+- ریپو را در /opt/viranum کلون/آپدیت می‌کند
 - .env را می‌سازد و تنظیم می‌کند
 - سرویس‌ها را build و up می‌کند و لاگ بات را نمایش می‌دهد
 
 
 ## راه‌اندازی محلی (Docker)
 ```
-git clone https://github.com/USERNAME/Numiran.git
-cd Numiran
+git clone https://github.com/USERNAME/Viranum.git
+cd Viranum
 cp .env.example .env
 # فایل .env را ویرایش کنید (BOT_TOKEN, NUMBERLAND_API_KEY, ADMIN_IDS, ...)
 

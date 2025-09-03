@@ -18,7 +18,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.language": "تنظیمات زبان",
     },
     "en": {
-        "greet": "Welcome to Numiran bot. Choose an option:",
+        "greet": "Welcome to Viranum bot. Choose an option:",
         "choose_language": "Choose your language:",
         "language_set": "Language has been set.",
         "wallet.info": "Wallet: Top-up and history coming soon.",
@@ -32,7 +32,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.language": "Language Settings",
     },
     "ru": {
-        "greet": "Добро пожаловать в бота Numiran. Выберите действие:",
+        "greet": "Добро пожаловать в бота Viranum. Выберите действие:",
         "choose_language": "Выберите язык:",
         "language_set": "Язык установлен.",
         "wallet.info": "Кошелёк: пополнение и история скоро.",

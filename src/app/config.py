@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     ADMIN_IDS: str = Field("", description="Comma separated telegram user IDs")
     NUMBERLAND_API_KEY: str = Field("", description="Numberland API key")
 
-    DB_DSN: str = Field("postgresql+asyncpg://numiran:numiran@db:5432/numiran")
+    DB_DSN: str = Field("postgresql+asyncpg://viranum:viranum@db:5432/viranum")
     REDIS_DSN: str = Field("redis://redis:6379/0")
 
     BASE_MARKUP_PERCENT: float = 20.0
