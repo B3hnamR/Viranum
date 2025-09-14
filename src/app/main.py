@@ -75,10 +75,12 @@ async def safe_edit_text(message: Message, text: str, reply_markup=None):
             return
         raise
 
-def main_kb(lang: str):
+def main_kb(lang: str, provider_key: Optional[str] = None):
     b = InlineKeyboardBuilder()
     b.button(text=tr("menu.buy_temp", lang), callback_data="buy_temp")
-    b.button(text=tr("menu.buy_perm", lang), callback_data="buy_perm")
+    # Hide permanent numbers for providers that don't support it (e.g., onlinesim)
+    if (provider_key or "").lower() not in {"onlinesim"}:
+        b.button(text=tr("menu.buy_perm", lang), callback_data="buy_perm")
     b.button(text=tr("menu.wallet", lang), callback_data="wallet")
     b.button(text=tr("menu.active", lang), callback_data="active_orders")
     b.button(text=tr("menu.orders", lang), callback_data="orders")
@@ -360,14 +362,30 @@ async def on_startup(bot: Bot):
 async def start_handler(message: Message, state: FSMContext):
     await state.clear()
     lang = await get_lang(message)
-    await message.answer(tr("greet", lang), reply_markup=main_kb(lang))
+    # Ensure provider selection first
+    r = await get_redis()
+    uid = message.from_user.id
+    prov_key = None
+    if r:
+        v = await r.get(f"user:provider:{uid}")
+        if v:
+            prov_key = v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
+    if not prov_key:
+        await state.update_data(pending_after_provider="home")
+        await message.answer(
+            t(lang, "ارائه‌دهنده را انتخاب کنید:", "Choose a provider:", "Выберите провайдера:"),
+            reply_markup=providers_kb(lang),
+        )
+        return
+    await message.answer(tr("greet", lang), reply_markup=main_kb(lang, prov_key))
 
 
 async def home_handler(call: CallbackQuery, state: FSMContext):
     await state.clear()
     lang = await get_lang(call)
     await call.answer()
-    await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang))
+    prov_key = await get_user_provider(call)
+    await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang, prov_key))
 
 
 async def language_handler(call: CallbackQuery):
@@ -622,6 +640,13 @@ async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
     services = await prov.get_services()
     if not isinstance(services, list):
         services = []
+    if not services:
+        await call.message.edit_text(
+            t(lang, "سرویسی یافت نشد. تنظیمات یا موجودی را بررسی کنید.", "No services available. Check configuration or balance.", "Сервисы недоступны. Проверьте настройки или баланс."),
+            reply_markup=main_kb(lang, selected_key),
+        )
+        await state.clear()
+        return
     await state.set_state(BuyTemp.choosing_service)
     await state.update_data(services=services, sv_page=0, lang=lang, provider_key=selected_key)
     await call.message.edit_text(
