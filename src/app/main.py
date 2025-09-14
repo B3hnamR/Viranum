@@ -385,25 +385,25 @@ async def home_handler(call: CallbackQuery, state: FSMContext):
     lang = await get_lang(call)
     await call.answer()
     prov_key = await get_user_provider(call)
-    await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang, prov_key))
+    await safe_edit_text(call.message, tr("greet", lang), reply_markup=main_kb(lang, prov_key))
 
 
 async def language_handler(call: CallbackQuery):
     lang = await get_lang(call)
-    await call.message.edit_text(tr("choose_language", lang), reply_markup=language_kb())
+    await safe_edit_text(call.message, tr("choose_language", lang), reply_markup=language_kb())
 
 
 async def set_language_handler(call: CallbackQuery):
     _, lang = call.data.split(":", 1)
     await set_user_lang(call.from_user.id, lang)
-    await call.message.edit_text(tr("language_set", lang), reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, tr("language_set", lang), reply_markup=main_kb(lang))
 
 
 async def providers_handler(call: CallbackQuery, state: FSMContext):
     lang = await get_lang(call)
     await call.answer()
     await state.update_data(pending_after_provider="home")
-    await call.message.edit_text(
+    await safe_edit_text(call.message, 
         t(lang, "ارائه‌دهنده را انتخاب کنید:", "Choose a provider:", "Выберите провайдера:"),
         reply_markup=providers_kb(lang),
     )
@@ -423,14 +423,14 @@ async def set_provider_handler(call: CallbackQuery, state: FSMContext):
         services = services if isinstance(services, list) else []
         await state.set_state(BuyTemp.choosing_service)
         await state.update_data(services=services, sv_page=0, lang=lang, provider_key=key)
-        await call.message.edit_text(
+        await safe_edit_text(call.message, 
             t(lang, "یک سرویس انتخاب کنید:", "Choose a service:", "Выберите сервис:"),
             reply_markup=services_kb(services, 0, 8, lang),
         )
         return
     # default: back to home
     await state.clear()
-    await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, tr("greet", lang), reply_markup=main_kb(lang))
 
 
 async def wallet_kb(lang: str):
@@ -448,7 +448,7 @@ async def wallet_handler(call: CallbackQuery, state: FSMContext):
     uid = call.from_user.id
     bal = await wallet_get_balance(uid)
     text = t(lang, "موجودی کیف پول شما: ", "Your wallet balance: ", "Баланс кошелька: ") + f"{bal} تومان"
-    await call.message.edit_text(text, reply_markup=await wallet_kb(lang))
+    await safe_edit_text(call.message, text, reply_markup=await wallet_kb(lang))
 
 
 async def balance_cmd(message: Message):
@@ -467,7 +467,7 @@ async def balance_cmd(message: Message):
 async def support_handler(call: CallbackQuery):
     lang = await get_lang(call)
     await call.answer()
-    await call.message.edit_text(tr("support.info", lang), reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, tr("support.info", lang), reply_markup=main_kb(lang))
 
 
 # --------- Wallet Top-up (manual with admin approval) ---------
@@ -476,7 +476,7 @@ async def wallet_topup_start_handler(call: CallbackQuery, state: FSMContext):
     lang = await get_lang(call)
     await call.answer()
     await state.set_state(WalletTopUp.waiting_amount)
-    await call.message.edit_text(t(lang, "مبلغ شارژ را به تومان ارسال کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (Томан):"))
+    await safe_edit_text(call.message, t(lang, "مبلغ شارژ را به تومان ارسال کنید:", "Send top-up amount (Toman):", "Отправьте сумму пополнения (Томан):"))
 
 
 async def topup_amount_input_handler(message: Message, state: FSMContext, bot: Bot):
@@ -528,7 +528,7 @@ async def wallet_history_handler(call: CallbackQuery):
     uid = call.from_user.id
     items = await wallet_history(uid, 10)
     if not items:
-        await call.message.edit_text(t(lang, "تاریخچه‌ای موجود نیست.", "No history.", "История отсутствует."), reply_markup=await wallet_kb(lang))
+        await safe_edit_text(call.message, t(lang, "تاریخچه‌ای موجود نیست.", "No history.", "История отсутствует."), reply_markup=await wallet_kb(lang))
         return
 
     lines = []
@@ -542,7 +542,7 @@ async def wallet_history_handler(call: CallbackQuery):
         else:
             lines.append(json.dumps(it, ensure_ascii=False))
     text = "\n".join(lines)
-    await call.message.edit_text(text, reply_markup=await wallet_kb(lang))
+    await safe_edit_text(call.message, text, reply_markup=await wallet_kb(lang))
 
 
 async def wallet_topup_approve_handler(call: CallbackQuery, bot: Bot):
@@ -577,7 +577,7 @@ async def wallet_topup_approve_handler(call: CallbackQuery, bot: Bot):
     except Exception:
         pass
 
-    await call.message.edit_text(t(lang, "درخواست تایید شد.", "Request approved.", "Запрос одобрен."))
+    await safe_edit_text(call.message, t(lang, "درخواست تایید شد.", "Request approved.", "Запрос одобрен."))
 
 
 async def wallet_topup_reject_handler(call: CallbackQuery, bot: Bot):
@@ -609,7 +609,7 @@ async def wallet_topup_reject_handler(call: CallbackQuery, bot: Bot):
     except Exception:
         pass
 
-    await call.message.edit_text(t(lang, "درخواست رد شد.", "Request rejected.", "Запрос отклонён."))
+    await safe_edit_text(call.message, t(lang, "درخواست رد شد.", "Request rejected.", "Запрос отклонён."))
 
 
 # --------- Temporary Number Flow ---------
@@ -629,7 +629,7 @@ async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
                 selected_key = v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
         if not selected_key:
             await state.update_data(pending_after_provider="buy_temp")
-            await call.message.edit_text(
+            await safe_edit_text(call.message, 
                 t(lang, "ارائه‌دهنده را انتخاب کنید:", "Choose a provider:", "Выберите провайдера:"),
                 reply_markup=providers_kb(lang),
             )
@@ -641,7 +641,7 @@ async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
     if not isinstance(services, list):
         services = []
     if not services:
-        await call.message.edit_text(
+        await safe_edit_text(call.message, 
             t(lang, "سرویسی یافت نشد. تنظیمات یا موجودی را بررسی کنید.", "No services available. Check configuration or balance.", "Сервисы недоступны. Проверьте настройки или баланс."),
             reply_markup=main_kb(lang, selected_key),
         )
@@ -649,7 +649,7 @@ async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
         return
     await state.set_state(BuyTemp.choosing_service)
     await state.update_data(services=services, sv_page=0, lang=lang, provider_key=selected_key)
-    await call.message.edit_text(
+    await safe_edit_text(call.message, 
         t(lang, "یک سرویس را انتخاب کنید:", "Choose a service:", "Выберите сервис:"),
         reply_markup=services_kb(services, 0, 8, lang),
     )
@@ -683,7 +683,7 @@ async def service_select_handler(call: CallbackQuery, state: FSMContext):
     await state.set_state(BuyTemp.choosing_country)
     await state.update_data(countries=countries, ct_page=0)
 
-    await call.message.edit_text(
+    await safe_edit_text(call.message, 
         t(lang, "کشور را انتخاب کنید:", "Choose a country:", "Выберите страну:"),
         reply_markup=countries_kb(countries, 0, 8, lang),
     )
@@ -708,7 +708,7 @@ async def country_select_handler(call: CallbackQuery, state: FSMContext):
     await state.update_data(country_id=cid)
     await state.set_state(BuyTemp.choosing_operator)
 
-    await call.message.edit_text(
+    await safe_edit_text(call.message, 
         t(lang, "اپراتور را انتخاب کنید:", "Choose an operator:", "Выберите оператора:"),
         reply_markup=operators_kb(lang),
     )
@@ -734,7 +734,7 @@ async def operator_select_handler(call: CallbackQuery, state: FSMContext):
         item = info[0]
 
     if not item:
-        await call.message.edit_text(
+        await safe_edit_text(call.message, 
             t(lang, "شماره‌ای یافت نشد.", "No numbers available.", "Нет доступных номеров."),
             reply_markup=main_kb(lang),
         )
@@ -767,7 +767,7 @@ async def operator_select_handler(call: CallbackQuery, state: FSMContext):
     )
 
     await state.set_state(BuyTemp.confirm_purchase)
-    await call.message.edit_text(msg, reply_markup=confirm_kb(lang))
+    await safe_edit_text(call.message, msg, reply_markup=confirm_kb(lang))
 
 
 async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
@@ -792,7 +792,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
         )
     except Exception as e:
             localized = localize_api_error(lang, getattr(e, "code", None), getattr(e, "description", ""))
-            await call.message.edit_text(
+            await safe_edit_text(call.message, 
                 t(lang, "خطا در خرید: ", "Purchase error: ", "Ошибка покупки: ") + localized,
                 reply_markup=main_kb(lang),
             )
@@ -851,7 +851,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
         )
         await r.expire(f"active:{uid}", ttl_sec + 3600)
 
-    await call.message.edit_text(order_msg, reply_markup=status_kb_provider(lang, prov_key, rid))
+    await safe_edit_text(call.message, order_msg, reply_markup=status_kb_provider(lang, prov_key, rid))
 
     # Start polling task
     chat_id = call.message.chat.id
@@ -1015,7 +1015,7 @@ async def my_orders_handler(call: CallbackQuery):
                 continue
 
     if not items:
-        await call.message.edit_text(t(lang, "سفارشی یافت نشد.", "No purchases yet.", "Покупки отсутствуют."), reply_markup=main_kb(lang))
+        await safe_edit_text(call.message, t(lang, "سفارشی یافت نشد.", "No purchases yet.", "Покупки отсутствуют."), reply_markup=main_kb(lang))
         return
 
     lines = []
@@ -1036,11 +1036,11 @@ async def active_orders_handler(call: CallbackQuery):
     uid = call.from_user.id
     r = await get_redis()
     if not r:
-        await call.message.edit_text(t(lang, "خطا در خواندن داده‌ها.", "Data read error.", "Ошиб��а чтения данных."), reply_markup=main_kb(lang))
+        await safe_edit_text(call.message, t(lang, "خطا در خواندن داده‌ها.", "Data read error.", "Ошиб��а чтения данных."), reply_markup=main_kb(lang))
         return
     data = await r.hgetall(f"active:{uid}")
     if not data:
-        await call.message.edit_text(t(lang, "سفارش فعالی یافت نشد.", "No active orders.", "Активных покупок нет."), reply_markup=main_kb(lang))
+        await safe_edit_text(call.message, t(lang, "سفارش فعالی یافت نشد.", "No active orders.", "Активных покупок нет."), reply_markup=main_kb(lang))
         return
     lines = []
     now_ts = int(time.time())
@@ -1071,7 +1071,7 @@ async def active_orders_handler(call: CallbackQuery):
 async def buy_perm_handler(call: CallbackQuery):
     lang = await get_lang(call)
     await call.answer()
-    await call.message.edit_text(tr("buy_perm.stub", lang), reply_markup=main_kb(lang))
+    await safe_edit_text(call.message, tr("buy_perm.stub", lang), reply_markup=main_kb(lang))
 
 
 # ---------------------- App bootstrap ----------------------
@@ -1146,3 +1146,4 @@ async def app():
 
 if __name__ == "__main__":
     asyncio.run(app())
+
