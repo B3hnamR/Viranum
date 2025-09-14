@@ -113,12 +113,18 @@ class OnlineSimProvider(Provider):
         if not settings.ONLINESIM_API_KEY:
             raise ProviderAPIError(-1, "missing ONLINESIM_API_KEY")
         async with _HTTP(settings.ONLINESIM_API_KEY) as http:
-            # tariffs may be heavy; try without country to get global view
-            data = await http.get("getTariffs.php")
+            # Try global tariffs first (localized pricing, bigger page)
+            data = await http.get(
+                "getTariffs.php",
+                {"locale_price": "1", "count": "200", "page": "1", "lang": "en"},
+            )
         if not _ok(data):
             raise ProviderAPIError(int(data.get("errorCode", -1) or -1), data.get("error_msg", "tariffs error"))
-        # Expected structure: {response:1, tariffs:{"7": {"tg": {...}, ...}, ...}}
-        tariffs = data.get("tariffs") or {}
+        # Expected structures to support:
+        # 1) {response:1, tariffs:{"7": {"tg": {...}, ...}, ...}}
+        # 2) {response:1, tarifs:{...}}  (typo on some variants)
+        # 3) {response:1, data:{...}}
+        tariffs = data.get("tariffs") or data.get("tarifs") or data.get("data") or {}
         seen: Dict[str, bool] = {}
         out: List[Dict[str, Any]] = []
         for _cid, svs in tariffs.items():
@@ -136,16 +142,42 @@ class OnlineSimProvider(Provider):
                 })
         # sort by name
         out.sort(key=lambda x: x.get("name_en", ""))
+        # Fallback: if empty, try a couple of common countries to extract service codes
+        if not out:
+            for test_c in ("7", "1", "44"):
+                async with _HTTP(settings.ONLINESIM_API_KEY) as http:
+                    d2 = await http.get(
+                        "getTariffs.php",
+                        {"country": test_c, "locale_price": "1", "count": "200", "page": "1", "lang": "en"},
+                    )
+                if not _ok(d2):
+                    continue
+                t2 = d2.get("tariffs") or d2.get("tarifs") or d2.get("data") or {}
+                svs = t2.get(test_c, {}) if isinstance(t2, dict) else {}
+                if isinstance(svs, dict):
+                    for s_code in svs.keys():
+                        if s_code in seen:
+                            continue
+                        seen[s_code] = True
+                        out.append({
+                            "id": s_code,
+                            "name": _normalize_service_name(s_code),
+                            "name_en": _normalize_service_name(s_code),
+                            "active": 1,
+                        })
+            out.sort(key=lambda x: x.get("name_en", ""))
         return out
 
     async def get_countries(self) -> List[Dict[str, Any]]:
         if not settings.ONLINESIM_API_KEY:
             raise ProviderAPIError(-1, "missing ONLINESIM_API_KEY")
         async with _HTTP(settings.ONLINESIM_API_KEY) as http:
-            data = await http.get("getTariffs.php")
+            data = await http.get(
+                "getTariffs.php", {"locale_price": "1", "count": "200", "page": "1", "lang": "en"}
+            )
         if not _ok(data):
             raise ProviderAPIError(int(data.get("errorCode", -1) or -1), data.get("error_msg", "tariffs error"))
-        tariffs = data.get("tariffs") or {}
+        tariffs = data.get("tariffs") or data.get("tarifs") or data.get("data") or {}
         out: List[Dict[str, Any]] = []
         for cid in tariffs.keys():
             out.append({
@@ -165,7 +197,17 @@ class OnlineSimProvider(Provider):
         if not settings.ONLINESIM_API_KEY:
             raise ProviderAPIError(-1, "missing ONLINESIM_API_KEY")
         async with _HTTP(settings.ONLINESIM_API_KEY) as http:
-            data = await http.get("getTariffs.php", {"country": str(country)})
+            data = await http.get(
+                "getTariffs.php",
+                {
+                    "country": str(country),
+                    "filter_service": str(service),
+                    "locale_price": "1",
+                    "count": "200",
+                    "page": "1",
+                    "lang": "en",
+                },
+            )
         if not _ok(data):
             raise ProviderAPIError(int(data.get("errorCode", -1) or -1), data.get("error_msg", "tariffs error"))
         tariffs = data.get("tariffs", {})
@@ -188,7 +230,10 @@ class OnlineSimProvider(Provider):
         if not settings.ONLINESIM_API_KEY:
             raise ProviderAPIError(-1, "missing ONLINESIM_API_KEY")
         async with _HTTP(settings.ONLINESIM_API_KEY) as http:
-            data = await http.get("getNum.php", {"service": str(service), "country": str(country)})
+            data = await http.get(
+                "getNum.php",
+                {"service": str(service), "country": str(country), "lang": "en"},
+            )
         if not _ok(data):
             raise ProviderAPIError(int(data.get("errorCode", -1) or -1), data.get("error_msg", "getNum error"))
         # Known shape: {response:1, tzid: "12345", number: "+7..."}
@@ -265,4 +310,3 @@ class OnlineSimProvider(Provider):
         async with _HTTP(settings.ONLINESIM_API_KEY) as http:
             data = await http.get("setOperation.php", {"tzid": str(id), "op": "6"})
         return {"RESULT": 1 if _ok(data) else 0, "DESCRIPTION": str(data)}
-
