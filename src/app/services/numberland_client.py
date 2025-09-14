@@ -209,12 +209,15 @@ class NumberlandClient:
         service: Union[int, str],
         country: Union[int, str],
         operator: Union[int, str],
+        price: Optional[Union[int, str]] = None,
     ) -> Dict[str, Any]:
         params = {
             "service": str(service),
             "country": str(country),
             "operator": str(operator),
         }
+        if price is not None:
+            params["price"] = str(price)
         return await self._get("getnum", params)
 
     async def check_status(self, *, id: Union[int, str]) -> Dict[str, Any]:

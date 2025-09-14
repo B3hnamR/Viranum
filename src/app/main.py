@@ -20,6 +20,11 @@ from .utils.logger import setup_logging
 from .services.numberland_client import NumberlandClient, NumberlandAPIError
 from .services.pricing import calculate_price
 from .utils.enums import NumberStatus
+from .providers.registry import (
+    get_provider,
+    enabled_providers,
+    provider_display_name_map,
+)
 
 
 # ---------------------- Helpers ----------------------
@@ -247,6 +252,47 @@ async def get_lang(obj) -> str:
     return base if base in {"fa", "en", "ru"} else settings.LOCALE_DEFAULT
 
 
+# ---------------------- Provider selection ----------------------
+
+def _default_provider_key() -> str:
+    eps = enabled_providers()
+    return eps[0] if eps else "numberland"
+
+
+async def set_user_provider(user_id: int, provider_key: str) -> None:
+    r = await get_redis()
+    if not r:
+        return
+    await r.set(f"user:provider:{user_id}", provider_key)
+
+
+async def get_user_provider(obj) -> str:
+    r = await get_redis()
+    uid = getattr(getattr(obj, "from_user", None), "id", None)
+    if r and uid:
+        try:
+            v = await r.get(f"user:provider:{uid}")
+            if v:
+                val = v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
+                if val:
+                    return val
+        except Exception:
+            pass
+    return _default_provider_key()
+
+
+def providers_kb(lang: str):
+    b = InlineKeyboardBuilder()
+    keys = enabled_providers()
+    names = provider_display_name_map()
+    for k in keys:
+        label = names.get(k, k)
+        b.button(text=label, callback_data=f"pv:set:{k}")
+    b.button(text=t(lang, "بازگشت", "Back", "Назад"), callback_data="home")
+    b.adjust(2, 2, 1)
+    return b.as_markup()
+
+
 async def wallet_get_balance(user_id: int) -> int:
     r = await get_redis()
     if not r:
@@ -333,6 +379,40 @@ async def set_language_handler(call: CallbackQuery):
     await call.message.edit_text(tr("language_set", lang), reply_markup=main_kb(lang))
 
 
+async def providers_handler(call: CallbackQuery, state: FSMContext):
+    lang = await get_lang(call)
+    await call.answer()
+    await state.update_data(pending_after_provider="home")
+    await call.message.edit_text(
+        t(lang, "ارائه‌دهنده را انتخاب کنید:", "Choose a provider:", "Выберите провайдера:"),
+        reply_markup=providers_kb(lang),
+    )
+
+
+async def set_provider_handler(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    lang = await get_lang(call)
+    _, _, key = call.data.split(":", 2)
+    await set_user_provider(call.from_user.id, key)
+    data = await state.get_data()
+    pending = data.get("pending_after_provider")
+    if pending == "buy_temp":
+        # continue the buy flow: fetch services and show
+        prov = get_provider(key)
+        services = await prov.get_services()
+        services = services if isinstance(services, list) else []
+        await state.set_state(BuyTemp.choosing_service)
+        await state.update_data(services=services, sv_page=0, lang=lang, provider_key=key)
+        await call.message.edit_text(
+            t(lang, "یک سرویس انتخاب کنید:", "Choose a service:", "Выберите сервис:"),
+            reply_markup=services_kb(services, 0, 8, lang),
+        )
+        return
+    # default: back to home
+    await state.clear()
+    await call.message.edit_text(tr("greet", lang), reply_markup=main_kb(lang))
+
+
 async def wallet_kb(lang: str):
     b = InlineKeyboardBuilder()
     b.button(text=t(lang, "افزایش موجودی", "Increase balance", "Пополнить баланс"), callback_data="w:topup")
@@ -354,8 +434,9 @@ async def wallet_handler(call: CallbackQuery, state: FSMContext):
 async def balance_cmd(message: Message):
     lang = await get_lang(message)
     try:
-        async with NumberlandClient() as cl:
-            bal = await cl.balance()
+        prov_key = await get_user_provider(message)
+        prov = get_provider(prov_key)
+        bal = await prov.balance()
         balance = bal.get("BALANCE") or bal.get("balance")
         currency = bal.get("CURRENCY") or bal.get("currency") or "Toman"
         await message.answer(t(lang, "موجودی شما: ", "Your balance: ", "Ваш баланс: ") + f"{balance} {currency}")
@@ -516,13 +597,31 @@ async def wallet_topup_reject_handler(call: CallbackQuery, bot: Bot):
 async def buy_temp_handler(call: CallbackQuery, state: FSMContext):
     lang = await get_lang(call)
     await call.answer()
-    # Fetch services
-    async with NumberlandClient() as cl:
-        services = await cl.get_services()
-        if not isinstance(services, list):
-            services = []
+    # Fetch services via selected provider
+    prov_keys = enabled_providers()
+    uid = call.from_user.id
+    selected_key = None
+    if len(prov_keys) > 1:
+        r = await get_redis()
+        if r:
+            v = await r.get(f"user:provider:{uid}")
+            if v:
+                selected_key = v.decode() if isinstance(v, (bytes, bytearray)) else str(v)
+        if not selected_key:
+            await state.update_data(pending_after_provider="buy_temp")
+            await call.message.edit_text(
+                t(lang, "ارائه‌دهنده را انتخاب کنید:", "Choose a provider:", "Выберите провайдера:"),
+                reply_markup=providers_kb(lang),
+            )
+            return
+    if not selected_key:
+        selected_key = prov_keys[0] if prov_keys else _default_provider_key()
+    prov = get_provider(selected_key)
+    services = await prov.get_services()
+    if not isinstance(services, list):
+        services = []
     await state.set_state(BuyTemp.choosing_service)
-    await state.update_data(services=services, sv_page=0, lang=lang)
+    await state.update_data(services=services, sv_page=0, lang=lang, provider_key=selected_key)
     await call.message.edit_text(
         t(lang, "یک سرویس را انتخاب کنید:", "Choose a service:", "Выберите сервис:"),
         reply_markup=services_kb(services, 0, 8, lang),
@@ -548,11 +647,12 @@ async def service_select_handler(call: CallbackQuery, state: FSMContext):
 
     await state.update_data(service_id=sid)
 
-    # Fetch countries
-    async with NumberlandClient() as cl:
-        countries = await cl.get_countries()
-        if not isinstance(countries, list):
-            countries = []
+    # Fetch countries from selected provider
+    prov_key = data.get("provider_key") or await get_user_provider(call)
+    prov = get_provider(prov_key)
+    countries = await prov.get_countries()
+    if not isinstance(countries, list):
+        countries = []
     await state.set_state(BuyTemp.choosing_country)
     await state.update_data(countries=countries, ct_page=0)
 
@@ -652,15 +752,18 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     op = data.get("operator")
 
     # For MVP we skip wallet check; directly attempt purchase
-    async with NumberlandClient() as cl:
-        try:
-            quote = data.get("quote", {})
-            base_amount = int(quote.get("amount", 0)) if quote else 0
-            params = {"service": str(sid), "country": str(cid), "operator": str(op)}
-            if base_amount > 0:
-                params["price"] = str(base_amount)
-            res = await cl._get("getnum", params)
-        except NumberlandAPIError as e:
+    try:
+        quote = data.get("quote", {})
+        base_amount = int(quote.get("amount", 0)) if quote else 0
+        prov_key = data.get("provider_key") or await get_user_provider(call)
+        prov = get_provider(prov_key)
+        res = await prov.buy_temp(
+            service=sid,
+            country=cid,
+            operator=op,
+            price=base_amount if base_amount > 0 else None,
+        )
+    except Exception as e:
             localized = localize_api_error(lang, getattr(e, "code", None), getattr(e, "description", ""))
             await call.message.edit_text(
                 t(lang, "خطا در خرید: ", "Purchase error: ", "Ошибка покупки: ") + localized,
@@ -724,18 +827,18 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     chat_id = call.message.chat.id
     message_id = call.message.message_id
 
-    async def poll_status(order_id: str, lang: str, uid: int):
-        async with NumberlandClient() as pcl:
-            max_seconds = parse_time_to_seconds(time_str)
-            elapsed = 0
-            interval = 4
-            while elapsed <= max_seconds:
-                try:
-                    st = await pcl.check_status(id=order_id)
-                except Exception as e:
-                    await asyncio.sleep(interval)
-                    elapsed += interval
-                    continue
+    async def poll_status(order_id: str, lang: str, uid: int, prov_key: str):
+        prov_local = get_provider(prov_key)
+        max_seconds = parse_time_to_seconds(time_str)
+        elapsed = 0
+        interval = 4
+        while elapsed <= max_seconds:
+            try:
+                st = await prov_local.status(id=order_id)
+            except Exception as e:
+                await asyncio.sleep(interval)
+                elapsed += interval
+                continue
 
                 result = int(st.get("RESULT", 0))
                 code = st.get("CODE", "") or ""
@@ -772,7 +875,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
     prev = POLL_TASKS.get(rid)
     if prev and not prev.done():
         prev.cancel()
-    POLL_TASKS[rid] = asyncio.create_task(poll_status(rid, lang, uid))
+    POLL_TASKS[rid] = asyncio.create_task(poll_status(rid, lang, uid, prov_key))
 
 
 # --------- Status control ---------
@@ -809,19 +912,20 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
 
     _, action, rid = call.data.split(":", 2)
 
-    async with NumberlandClient() as cl:
-        try:
-            if action == "cancel":
-                res = await cl.cancel_number(id=rid)
-            elif action == "repeat":
-                res = await cl.repeat(id=rid)
-            elif action == "close":
-                res = await cl.close_number(id=rid)
-            elif action == "refresh":
-                res = await cl.check_status(id=rid)
-            else:
-                return
-        except NumberlandAPIError as e:
+    try:
+        prov_key = data.get("provider_key") or await get_user_provider(call)
+        prov = get_provider(prov_key)
+        if action == "cancel":
+            res = await prov.cancel(id=rid)
+        elif action == "repeat":
+            res = await prov.repeat(id=rid)
+        elif action == "close":
+            res = await prov.close(id=rid)
+        elif action == "refresh":
+            res = await prov.status(id=rid)
+        else:
+            return
+    except Exception as e:
             await call.message.answer(t(lang, "خطا: ", "Error: ", "Ошибка: ") + str(e))
             return
 
@@ -960,6 +1064,10 @@ async def app():
 
     dp.callback_query.register(language_handler, F.data == "language")
     dp.callback_query.register(set_language_handler, F.data.startswith("lang:"))
+
+    # provider selection
+    dp.callback_query.register(providers_handler, F.data == "providers")
+    dp.callback_query.register(set_provider_handler, F.data.startswith("pv:set:"))
 
     dp.callback_query.register(wallet_handler, F.data == "wallet")
     dp.callback_query.register(wallet_topup_start_handler, F.data == "w:topup")
