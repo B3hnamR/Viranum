@@ -25,6 +25,7 @@ from .providers.registry import (
     enabled_providers,
     provider_display_name_map,
 )
+from .utils.keyboards_ext import status_kb_provider
 
 
 # ---------------------- Helpers ----------------------
@@ -83,6 +84,7 @@ def main_kb(lang: str):
     b.button(text=tr("menu.orders", lang), callback_data="orders")
     b.button(text=tr("menu.support", lang), callback_data="support")
     b.button(text=tr("menu.language", lang), callback_data="language")
+    b.button(text=tr("menu.providers", lang), callback_data="providers")
     b.adjust(2, 2, 3)
     return b.as_markup()
 
@@ -178,7 +180,7 @@ def confirm_kb(lang: str):
     return b.as_markup()
 
 
-def status_kb(lang: str, number_id: str):
+def status_kb(lang: str, provider_key: str, number_id: str):
     b = InlineKeyboardBuilder()
     b.button(text=t(lang, "لغو", "Cancel", "Отмена"), callback_data=f"st:cancel:{number_id}")
     b.button(text=t(lang, "کد مجدد", "Repeat", "Повтор"), callback_data=f"st:repeat:{number_id}")
@@ -815,13 +817,16 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
             "ts": now_ts,
             "expire_ts": expire_ts,
             "status": "active",
+            "provider": prov_key,
         }
         await r.lpush(f"orders:{uid}", json.dumps(entry, ensure_ascii=False))
         await r.ltrim(f"orders:{uid}", 0, 49)
-        await r.hset(f"active:{uid}", mapping={rid: json.dumps(entry, ensure_ascii=False)})
+        await r.hset(
+            f"active:{uid}", mapping={f"{prov_key}:{rid}": json.dumps(entry, ensure_ascii=False)}
+        )
         await r.expire(f"active:{uid}", ttl_sec + 3600)
 
-    await call.message.edit_text(order_msg, reply_markup=status_kb(lang, rid))
+    await call.message.edit_text(order_msg, reply_markup=status_kb_provider(lang, prov_key, rid))
 
     # Start polling task
     chat_id = call.message.chat.id
@@ -845,7 +850,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
                 desc = st.get("DESCRIPTION", "") or ""
 
                 if result == NumberStatus.CODE_RECEIVED:
-                    await _update_active_order(uid, order_id, "code", {"code": code})
+                    await _update_active_order(uid, order_id, "code", {"code": code}, prov_key)
                     txt = (
                         t(lang, "کد دریافت شد:", "Code received:", "Код получен:")
                         + f"\n\n<code>{code}</code>\n\n"
@@ -857,7 +862,7 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
                         pass
                     return
                 elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
-                    await _remove_active_order(uid, order_id)
+                    await _remove_active_order(uid, order_id, prov_key)
                     txt = (
                         t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ")
                         + f"{desc}"
@@ -872,19 +877,23 @@ async def confirm_buy_handler(call: CallbackQuery, state: FSMContext, bot: Bot):
                 elapsed += interval
 
     # cancel previous task if exists
-    prev = POLL_TASKS.get(rid)
+    rid_key = f"{prov_key}:{rid}"
+    prev = POLL_TASKS.get(rid_key)
     if prev and not prev.done():
         prev.cancel()
-    POLL_TASKS[rid] = asyncio.create_task(poll_status(rid, lang, uid, prov_key))
+    POLL_TASKS[rid_key] = asyncio.create_task(poll_status(rid, lang, uid, prov_key))
 
 
 # --------- Status control ---------
 
-async def _update_active_order(uid: int, order_id: str, status: str, extra: Optional[Dict[str, Any]] = None):
+async def _update_active_order(
+    uid: int, order_id: str, status: str, extra: Optional[Dict[str, Any]] = None, provider_key: Optional[str] = None
+):
     r = await get_redis()
     if not r:
         return
-    raw = await r.hget(f"active:{uid}", order_id)
+    field = f"{provider_key}:{order_id}" if provider_key else order_id
+    raw = await r.hget(f"active:{uid}", field)
     if not raw:
         return
     try:
@@ -894,15 +903,16 @@ async def _update_active_order(uid: int, order_id: str, status: str, extra: Opti
     obj["status"] = status
     if extra:
         obj.update(extra)
-    await r.hset(f"active:{uid}", order_id, json.dumps(obj, ensure_ascii=False))
+    await r.hset(f"active:{uid}", field, json.dumps(obj, ensure_ascii=False))
     # keep existing TTL
 
 
-async def _remove_active_order(uid: int, order_id: str):
+async def _remove_active_order(uid: int, order_id: str, provider_key: Optional[str] = None):
     r = await get_redis()
     if not r:
         return
-    await r.hdel(f"active:{uid}", order_id)
+    field = f"{provider_key}:{order_id}" if provider_key else order_id
+    await r.hdel(f"active:{uid}", field)
 
 
 async def status_action_handler(call: CallbackQuery, state: FSMContext):
@@ -910,10 +920,16 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     lang = await get_lang(call)
 
-    _, action, rid = call.data.split(":", 2)
+    parts = call.data.split(":")
+    action = parts[1]
+    if len(parts) >= 4:
+        prov_key = parts[2]
+        rid = parts[3]
+    else:
+        rid = parts[2]
+        prov_key = data.get("provider_key") or await get_user_provider(call)
 
     try:
-        prov_key = data.get("provider_key") or await get_user_provider(call)
         prov = get_provider(prov_key)
         if action == "cancel":
             res = await prov.cancel(id=rid)
@@ -947,11 +963,11 @@ async def status_action_handler(call: CallbackQuery, state: FSMContext):
 
     uid = call.from_user.id
     if result == NumberStatus.CODE_RECEIVED:
-        await _update_active_order(uid, rid, "code", {"code": code})
+        await _update_active_order(uid, rid, "code", {"code": code}, prov_key)
         txt = t(lang, "کد دریاف�� شد:", "Code received:", "Код получен:") + f"\n\n<code>{code}</code>"
         await call.message.answer(txt, parse_mode=ParseMode.HTML)
     elif result in (NumberStatus.CANCELED, NumberStatus.BANNED, NumberStatus.COMPLETED):
-        await _remove_active_order(uid, rid)
+        await _remove_active_order(uid, rid, prov_key)
         await call.message.answer(t(lang, "وضعیت نهایی: ", "Final status: ", "Итоговый статус: ") + localized_desc)
     else:
         await call.message.answer(t(lang, "وضعیت: ", "Status: ", "Статус: ") + localized_desc)

@@ -32,6 +32,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "menu.wallet": "Wallet",
         "menu.support": "Support",
         "menu.language": "Language Settings",
+        "menu.providers": "Providers",
         "menu.orders": "My purchases",
         "menu.active": "Active orders",
     },
