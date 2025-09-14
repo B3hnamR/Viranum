@@ -5,6 +5,7 @@ from typing import Dict, List
 from ..config import settings
 from .base import Provider
 from .numberland.adapter import NumberlandProvider
+from .onlinesim.adapter import OnlineSimProvider
 
 
 def _parse_display_map(raw: str) -> Dict[str, str]:
@@ -32,7 +33,7 @@ def enabled_providers() -> List[str]:
 
 
 def provider_display_name_map() -> Dict[str, str]:
-    return _parse_display_map(settings.PROVIDERS_DISPLAY or "numberland:Numberland")
+    return _parse_display_map(settings.PROVIDERS_DISPLAY or "onlinesim:OnlineSim")
 
 
 def get_provider(key: str) -> Provider:
@@ -41,7 +42,8 @@ def get_provider(key: str) -> Provider:
 
     if key == "numberland":
         return NumberlandProvider(key=key, display_name=display)
+    if key == "onlinesim":
+        return OnlineSimProvider(key=key, display_name=display)
 
     # Future: add 5sim, sms-activate, etc.
     raise ValueError(f"Unknown provider key: {key}")
-

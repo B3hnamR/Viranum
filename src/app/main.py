@@ -84,7 +84,7 @@ def main_kb(lang: str):
     b.button(text=tr("menu.orders", lang), callback_data="orders")
     b.button(text=tr("menu.support", lang), callback_data="support")
     b.button(text=tr("menu.language", lang), callback_data="language")
-    b.button(text=tr("menu.providers", lang), callback_data="providers")
+    b.button(text=t(lang, "ارائه‌دهنده‌ها", "Providers", "Провайдеры"), callback_data="providers")
     b.adjust(2, 2, 3)
     return b.as_markup()
 
