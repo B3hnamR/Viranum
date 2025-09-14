@@ -9,6 +9,7 @@ set -Eeuo pipefail
 #
 # Notes:
 # - Requires: git, docker with compose v2 (docker compose), bash
+# - Reads project .env and reports provider-related settings (ENABLED_PROVIDERS, PROVIDERS_DISPLAY, FIVESIM_API_KEY)
 # - On Windows, run via Git Bash or WSL: `bash u.sh`
 
 log() { echo -e "\033[1;34m[U]\033[0m $*"; }
@@ -50,6 +51,31 @@ log "Docker: (re)starting services..."
 
 log "Docker: services status:"
  docker compose ps
+
+# Report provider-related env (if present)
+if [ -f .env ]; then
+  ENABLED_PROVIDERS_VAL=$(grep -E '^ENABLED_PROVIDERS=' .env | sed 's/^ENABLED_PROVIDERS=//') || true
+  PROVIDERS_DISPLAY_VAL=$(grep -E '^PROVIDERS_DISPLAY=' .env | sed 's/^PROVIDERS_DISPLAY=//') || true
+  FIVESIM_API_KEY_VAL=$(grep -E '^FIVESIM_API_KEY=' .env | sed 's/^FIVESIM_API_KEY=//') || true
+
+  if [ -n "$ENABLED_PROVIDERS_VAL" ]; then
+    log "Providers enabled: $ENABLED_PROVIDERS_VAL"
+  else
+    log "Providers enabled: (default) numberland"
+  fi
+
+  if [ -n "$PROVIDERS_DISPLAY_VAL" ]; then
+    log "Providers display: $PROVIDERS_DISPLAY_VAL"
+  else
+    log "Providers display: numberland:Numberland (default)"
+  fi
+
+  if [ -n "$FIVESIM_API_KEY_VAL" ]; then
+    log "5SIM key: set"
+  else
+    log "5SIM key: not set"
+  fi
+fi
 
 # If network or containers were previously named under the old project, ensure compose picks new names
 # (Optional clean-up can be added here if needed)

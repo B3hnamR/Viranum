@@ -11,7 +11,9 @@
 #   sudo bash setup.sh                              # if already inside repo, will use it
 #
 # ENV overrides:
-#   REPO_URL, BRANCH, APP_DIR, SERVICE_TAIL, NON_INTERACTIVE, BOT_TOKEN, NUMBERLAND_API_KEY, ADMIN_IDS
+#   REPO_URL, BRANCH, APP_DIR, SERVICE_TAIL, NON_INTERACTIVE,
+#   BOT_TOKEN, NUMBERLAND_API_KEY, ADMIN_IDS,
+#   ENABLED_PROVIDERS, FIVESIM_API_KEY, PROVIDERS_DISPLAY
 
 set -Eeuo pipefail
 
@@ -141,11 +143,19 @@ configure_env() {
   read -r -p "Enter BOT_TOKEN: " BOT_TOKEN_INPUT
   read -r -p "Enter NUMBERLAND_API_KEY: " NUMBERLAND_API_KEY_INPUT
   read -r -p "Enter ADMIN_IDS (comma-separated, e.g., 123,456): " ADMIN_IDS_INPUT
+  # Providers (optional)
+  read -r -p "Enter ENABLED_PROVIDERS (e.g., numberland or numberland,5sim) [numberland]: " ENABLED_PROVIDERS_INPUT
+  read -r -p "Enter FIVESIM_API_KEY (leave empty if unused): " FIVESIM_API_KEY_INPUT
+  read -r -p "Enter PROVIDERS_DISPLAY (e.g., numberland:Numberland|5sim:5SIM) [numberland:Numberland]: " PROVIDERS_DISPLAY_INPUT
 
   # Update .env keys in place
   sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=${BOT_TOKEN_INPUT}|" .env
   sed -i "s|^NUMBERLAND_API_KEY=.*|NUMBERLAND_API_KEY=${NUMBERLAND_API_KEY_INPUT}|" .env
   sed -i "s|^ADMIN_IDS=.*|ADMIN_IDS=${ADMIN_IDS_INPUT}|" .env
+  # Provider keys (if present in .env.example)
+  sed -i "s|^ENABLED_PROVIDERS=.*|ENABLED_PROVIDERS=${ENABLED_PROVIDERS_INPUT:-numberland}|" .env
+  sed -i "s|^FIVESIM_API_KEY=.*|FIVESIM_API_KEY=${FIVESIM_API_KEY_INPUT}|" .env
+  sed -i "s|^PROVIDERS_DISPLAY=.*|PROVIDERS_DISPLAY=${PROVIDERS_DISPLAY_INPUT:-numberland:Numberland}|" .env
 
   ok ".env configured."
 }
